@@ -54,21 +54,21 @@ class Tablero:
     def es_pasillo(self, fila: int, col: int) -> bool:
         return self.obtener(fila, col) in (PASILLO, PUNTO, SUPER_PUNTO, VACIO)
 
-    def comer_punto(self, fila: int, col: int) -> int:
+    def comer_punto(self, fila: int, col: int) -> tuple[int, bool]:
         """
         Intenta comer el punto en (fila, col).
-        Retorna los puntos obtenidos (0 si no había nada).
+        Retorna (puntos obtenidos, es_super_punto).
         """
         celda = self.obtener(fila, col)
         if celda == PUNTO:
             self.establecer(fila, col, VACIO)
             self.puntos_comidos += 1
-            return 10
+            return 10, False
         if celda == SUPER_PUNTO:
             self.establecer(fila, col, VACIO)
             self.puntos_comidos += 1
-            return 50
-        return 0
+            return 50, True
+        return 0, False
 
     @property
     def completado(self) -> bool:

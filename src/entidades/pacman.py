@@ -14,6 +14,7 @@ class PacMan(Actor):
         super().__init__(fila, col, color=(255, 220, 0), velocidad=2.0)
         self.puntaje    = 0
         self.vidas      = 3
+        self.invencible = False
 
         # Dirección que el jugador quiere tomar
         self.next_dir_f = 0
@@ -31,12 +32,19 @@ class PacMan(Actor):
         Se ejecuta cada vez que Pac-Man llega al centro de una celda.
         """
         # 1. Intentar comer lo que hay en la celda actual
-        self.puntaje += tablero.comer_punto(self.fila, self.col)
+        puntos, es_super = tablero.comer_punto(self.fila, self.col)
+        self.puntaje += puntos
+        if es_super:
+            self.invencible = True
 
-        # 2. ¿Podemos girar hacia donde el jugador quiere?
+        # 2. ¿Podemos girar hacia donde el jugador quiere? (RESTAURADO)
         if not tablero.es_muro(self.fila + self.next_dir_f, self.col + self.next_dir_c):
             self.dir_fila = self.next_dir_f
             self.dir_col  = self.next_dir_c
         
         # 3. Seguir moviéndose si no hay muro enfrente
         super()._decidir_siguiente_paso(tablero, *args)
+
+    def morir(self) -> None:
+        self.vidas -= 1
+        self.invencible = False
