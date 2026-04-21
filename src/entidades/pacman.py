@@ -19,8 +19,9 @@ class PacMan(Actor):
     """
 
     def __init__(self, fila: int, col: int):
-        # velocidad = 2 píxeles por frame.
+        # velocidad base = 2 píxeles por frame.
         super().__init__(fila, col, color=(255, 237, 0), velocidad=2.0)
+        self._velocidad_base: float = 2.0
         self.puntaje = 0
         self.vidas = 3
         self.invencible = False
@@ -29,6 +30,15 @@ class PacMan(Actor):
         self.next_dir_c = 0
         self._muerte_activa = False
         self._escala_muerte = 1.0
+
+        # ── Mejoras roguelike ──
+        self.modo_fantasma: bool = False   # Atravesar paredes (Modo Fantasma)
+        # Lo asigna main cada frame según SistemaMejoras (escudo listo para absorber golpe)
+        self.escudo_activo_visual: bool = False
+
+    def aplicar_velocidad_bonus(self, multiplicador: float) -> None:
+        """Actualiza la velocidad según el bonus total (tienda + botas de run)."""
+        self.velocidad = self._velocidad_base * max(1.0, multiplicador)
 
     def iniciar_animacion_muerte(self) -> None:
         self._muerte_activa = True
@@ -65,11 +75,26 @@ class PacMan(Actor):
         if es_super:
             self.invencible = True
 
-        if not tablero.es_muro(self.fila + self.next_dir_f, self.col + self.next_dir_c):
-            self.dir_fila = self.next_dir_f
-            self.dir_col = self.next_dir_c
-
-        super()._decidir_siguiente_paso(tablero, *args)
+        if self.modo_fantasma:
+            # En modo fantasma: cambiar dirección siempre (ignorar muros)
+            nf = self.fila + self.next_dir_f
+            nc = self.col + self.next_dir_c
+            if 0 <= nf < tablero.filas and 0 <= nc < tablero.columnas:
+                self.dir_fila = self.next_dir_f
+                self.dir_col = self.next_dir_c
+            # Moverse ignorando muros
+            nueva_f = self.fila + self.dir_fila
+            nueva_c = self.col + self.dir_col
+            if 0 <= nueva_f < tablero.filas and 0 <= nueva_c < tablero.columnas:
+                self.fila = nueva_f
+                self.col = nueva_c
+                self.target_px = self.col * TAM_CELDA
+                self.target_py = self.fila * TAM_CELDA
+        else:
+            if not tablero.es_muro(self.fila + self.next_dir_f, self.col + self.next_dir_c):
+                self.dir_fila = self.next_dir_f
+                self.dir_col = self.next_dir_c
+            super()._decidir_siguiente_paso(tablero, *args)
 
     def morir(self) -> None:
         self.vidas -= 1
@@ -83,6 +108,32 @@ class PacMan(Actor):
 
         cx = offset_x + self.px + TAM_CELDA // 2
         cy = offset_y + self.py + TAM_CELDA // 2
+        t = pygame.time.get_ticks()
+
+        # Aura de modo fantasma (doble halo púrpura, muy visible)
+        if self.modo_fantasma:
+            aura_r = r_base + 10 + int(5 * math.sin(t * 0.009))
+            sz = aura_r * 2 + 8
+            aura_surf = pygame.Surface((sz, sz), pygame.SRCALPHA)
+            acx, acy = sz // 2, sz // 2
+            for i, alpha in enumerate([55, 110, 160]):
+                rr = aura_r - i * 3
+                if rr > 2:
+                    pygame.draw.circle(
+                        aura_surf, (160 + i * 15, 60 + i * 20, 255, alpha), (acx, acy), rr, 4 - i
+                    )
+            pygame.draw.circle(aura_surf, (220, 120, 255, 130), (acx, acy), r_base + 4, 2)
+            superficie.blit(aura_surf, (cx - sz // 2, cy - sz // 2))
+
+        # Anillo de escudo recargable (visible cuando está listo para bloquear un golpe)
+        if self.escudo_activo_visual:
+            pulse = 0.88 + 0.12 * math.sin(t * 0.014)
+            ring_r = r_base + 7 + int(2 * math.sin(t * 0.02))
+            # Brillo exterior dorado + trazo cian interior
+            gold = (int(255 * pulse), int(230 * pulse), int(60 * pulse))
+            pygame.draw.circle(superficie, gold, (cx, cy), ring_r, 4)
+            pygame.draw.circle(superficie, (120, 220, 255), (cx, cy), ring_r - 3, 2)
+            pygame.draw.circle(superficie, (255, 255, 255), (cx, cy), ring_r + 1, 1)
 
         # Boca tipo "wakka" (solo si no está en animación de muerte colapsando)
         if self._muerte_activa:

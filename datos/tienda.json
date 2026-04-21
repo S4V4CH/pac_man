@@ -1,0 +1,14 @@
+{
+  "usuarios": {
+    "Jugador": {
+      "monedas": 0,
+      "mejoras": {}
+    },
+    "jesus": {
+      "monedas": 500,
+      "mejoras": {
+        "botas_permanentes": 1
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 # src/entidades/fantasma.py
 
+import math
 import pygame
 from collections import deque
 from .actor import Actor
@@ -18,6 +19,9 @@ COLOR_OJO_BLANCO = (255, 255, 255)
 COLOR_PUPILA = (33, 33, 222)
 
 DIRECCIONES = [(-1, 0), (1, 0), (0, -1), (0, 1)] # N, S, O, E
+
+# Color del emboscador (FantasmaBlanco): morado — los de Fiebre del Oro son dorados/naranjas
+COLOR_EMBOSCADOR = (165, 95, 230)
 
 # 10 s a 60 FPS — el temporizador se decrementa cada frame en mover()
 DURACION_ASUSTADO_FRAMES = 60 * 10
@@ -40,6 +44,11 @@ class Fantasma(Actor):
         self._frames_retirada = 0
         # Identidad roguelike (Fase 4): distintivo dibujado sobre la cabeza
         self.marca_rol = ''
+        # ── Sistemas de mejoras roguelike ──
+        self.congelado: bool = False        # Congelador Pasivo
+        self.es_fiebre_oro: bool = False    # Fiebre del Oro (desaparece al ser comido)
+        # Caducidad de los 15 fantasmas etéreos (independiente de estado_asustado / muerte)
+        self.timer_fiebre_oro: int = 0
 
     def _teleportar_a_base(self) -> None:
         self.fila, self.col = self.fila_base, self.col_base
@@ -54,7 +63,12 @@ class Fantasma(Actor):
     def mover(self, tablero, *args) -> None:
         if self._ticks_gracia_danio > 0:
             self._ticks_gracia_danio -= 1
-        if self.estado_especial == MODO_ASUSTADO:
+        # Fiebre del oro: el tiempo de vida corre siempre (aun tras reposición al morir)
+        if self.es_fiebre_oro and self.timer_fiebre_oro > 0:
+            self.timer_fiebre_oro -= 1
+        if self.es_fiebre_oro and self.estado_especial == MODO_ASUSTADO:
+            self.timer_especial = self.timer_fiebre_oro
+        if self.estado_especial == MODO_ASUSTADO and not self.es_fiebre_oro:
             self.timer_especial -= 1
             if self.timer_especial <= 0:
                 self.estado_especial = None
@@ -66,6 +80,9 @@ class Fantasma(Actor):
                 self._teleportar_a_base()
         else:
             self._frames_retirada = 0
+        # ── Congelador Pasivo: no mover si está congelado ──
+        if self.congelado:
+            return
         super().mover(tablero, *args)
 
     def puede_danar_jugador(self) -> bool:
@@ -76,6 +93,8 @@ class Fantasma(Actor):
 
     def asustar(self, duracion_frames: int = DURACION_ASUSTADO_FRAMES):
         """Activa o renueva el modo asustado (super pastilla) salvo que esté en retirada."""
+        if self.es_fiebre_oro:
+            return
         if self.estado_especial != MODO_RETIRADA:
             self.estado_especial = MODO_ASUSTADO
             self.timer_especial = duracion_frames
@@ -152,15 +171,30 @@ class Fantasma(Actor):
 
         if self.estado_especial == MODO_ASUSTADO:
             cuerpo = COLOR_ASUSTADO
-            if self.timer_especial < 180 and (self.timer_especial // 12) % 2 == 0:
-                cuerpo = (255, 255, 255)
+            if not self.es_fiebre_oro:
+                if self.timer_especial < 180 and (self.timer_especial // 12) % 2 == 0:
+                    cuerpo = (255, 255, 255)
+            else:
+                # Fiebre del Oro: parpadeo dorado
+                t = pygame.time.get_ticks()
+                if (t // 150) % 2 == 0:
+                    cuerpo = (255, 200, 0)
+                else:
+                    cuerpo = (255, 140, 0)
             self._dibujar_cuerpo_arcade(superficie, cx, cy, cuerpo)
             self._dibujar_ojos_asustado(superficie, cx, cy)
+            # Indicador dorado para fantasmas de fiebre
+            if self.es_fiebre_oro:
+                self._dibujar_corona_fiebre(superficie, cx, cy)
             return
 
         self._dibujar_cuerpo_arcade(superficie, cx, cy, self.color_orig)
         self._dibujar_ojos_normales(superficie, cx, cy, df, dc)
         self._dibujar_distintivo_rol(superficie, cx, cy)
+
+        # ── Overlay de hielo si está congelado ──
+        if self.congelado:
+            self._dibujar_overlay_hielo(superficie, cx, cy)
 
     def _dibujar_distintivo_rol(self, surf: pygame.Surface, cx: int, cy: int) -> None:
         """Marca visual por tipo de IA (aleatorio / cazador / emboscador)."""
@@ -177,6 +211,38 @@ class Fantasma(Actor):
             pygame.draw.polygon(surf, (255, 220, 80), pts, width=2)
         elif self.marca_rol == 'emb':
             pygame.draw.lines(surf, (60, 40, 20), False, [(mx - 6, my), (mx, my - 6), (mx + 6, my)], 2)
+
+    def _dibujar_overlay_hielo(self, surf, cx: int, cy: int) -> None:
+        """Dibuja cristales de hielo sobre el fantasma congelado."""
+        r = TAM_CELDA // 2 - 1
+        ice_surf = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(ice_surf, (180, 230, 255, 100), (r + 2, r + 2), r)
+        surf.blit(ice_surf, (cx - r - 2, cy - r - 2))
+        # Copos de nieve pequeños
+        for i in range(4):
+            ang = math.radians(i * 90 + 45)
+            sx = int(cx + r * 0.55 * math.cos(ang))
+            sy = int(cy + r * 0.55 * math.sin(ang))
+            pygame.draw.circle(surf, (200, 240, 255), (sx, sy), 2)
+        # Cruz central
+        pygame.draw.line(surf, (220, 245, 255), (cx - 5, cy), (cx + 5, cy), 1)
+        pygame.draw.line(surf, (220, 245, 255), (cx, cy - 5), (cx, cy + 5), 1)
+
+    def _dibujar_corona_fiebre(self, surf, cx: int, cy: int) -> None:
+        """Dibuja una pequeña corona dorada sobre fantasmas de fiebre del oro."""
+        r = TAM_CELDA // 2 - 3
+        head_cy = cy - 3
+        # Tres puntitas doradas
+        pts_corona = [
+            (cx - 8, head_cy - r - 2),
+            (cx - 5, head_cy - r - 7),
+            (cx - 2, head_cy - r - 3),
+            (cx, head_cy - r - 8),
+            (cx + 2, head_cy - r - 3),
+            (cx + 5, head_cy - r - 7),
+            (cx + 8, head_cy - r - 2),
+        ]
+        pygame.draw.lines(surf, (255, 215, 0), False, pts_corona, 2)
 
     def _obtener_ruta_bfs(self, tablero, destino_f, destino_c):
         inicio = (self.fila, self.col)
@@ -229,7 +295,31 @@ class FantasmaAleatorio(Fantasma):
             super()._decidir_siguiente_paso(tablero, *args)
             return
 
-        # Si está asustado o normal, decide aleatoriamente
+        pacman = args[0] if args else None
+        # Fiebre del oro: huir del jugador (maximizar distancia Manhattan en un paso)
+        if self.es_fiebre_oro and self.estado_especial == MODO_ASUSTADO and pacman:
+            opciones = [
+                d for d in DIRECCIONES
+                if not tablero.es_muro(self.fila + d[0], self.col + d[1])
+                and d != (-self.dir_fila, -self.dir_col)
+            ]
+            if not opciones:
+                opciones = [(-self.dir_fila, -self.dir_col)] if (self.dir_fila or self.dir_col) else list(DIRECCIONES)
+            mejor_dist = -1
+            mejores: list = []
+            for d in opciones:
+                nf, nc = self.fila + d[0], self.col + d[1]
+                dist = abs(nf - pacman.fila) + abs(nc - pacman.col)
+                if dist > mejor_dist:
+                    mejor_dist = dist
+                    mejores = [d]
+                elif dist == mejor_dist:
+                    mejores.append(d)
+            self.dir_fila, self.dir_col = self.gen.elegir(mejores)
+            super()._decidir_siguiente_paso(tablero, *args)
+            return
+
+        # Si está asustado (normal) o en modo aleatorio, decide al azar
         opciones = [d for d in DIRECCIONES if not tablero.es_muro(self.fila + d[0], self.col + d[1]) and d != (-self.dir_fila, -self.dir_col)]
         if not opciones: opciones = [(-self.dir_fila, -self.dir_col)] if (self.dir_fila or self.dir_col) else DIRECCIONES
         self.dir_fila, self.dir_col = self.gen.elegir(opciones)
@@ -240,7 +330,8 @@ class FantasmaPerseguidor(Fantasma):
     PASOS_IMPLACABLE = 15
 
     def __init__(self, fila, col, fila_base, col_base, gen):
-        super().__init__(fila, col, (255, 181, 255), fila_base, col_base, velocidad=1.85)
+        # Ligeramente por debajo de Pac-Man (2.0); el evento de división sube velocidad con tope global
+        super().__init__(fila, col, (255, 181, 255), fila_base, col_base, velocidad=1.78)
         self.gen = gen
         self.modo_actual = MODO_CAOTICO
         self.timer_modo = 0
@@ -297,7 +388,7 @@ class FantasmaEmboscador(Fantasma):
     DIST_MANHATTAN_TIMIDO = 8
 
     def __init__(self, fila, col, fila_base, col_base, gen):
-        super().__init__(fila, col, (255, 181, 81), fila_base, col_base, velocidad=1.8)
+        super().__init__(fila, col, COLOR_EMBOSCADOR, fila_base, col_base, velocidad=1.8)
         self.gen = gen
         self.modo_actual = MODO_CAOTICO
         self.timer_modo = 0
@@ -358,6 +449,6 @@ class FantasmaEmboscador(Fantasma):
 
 
 class FantasmaBlanco(FantasmaEmboscador):
-    """Alias histórico: el tercer rol es el emboscador (naranja)."""
+    """Emboscador (antes naranja; ahora morado para no confundir con Fiebre del Oro)."""
 
     pass
