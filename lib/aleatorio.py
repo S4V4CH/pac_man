@@ -60,10 +60,6 @@ class GeneradorAleatorio:
         seed_mid = semilla % 10_000 or 1234   # garantiza 4 dígitos
         self._xn_mid: int = seed_mid
 
-        # Historial para análisis (activar con track=True si se desea)
-        self._historial: list[float] = []
-        self._track: bool = False
-
     # ------------------------------------------------------------------
     # Método 1 — Cuadrados Medios (Midsquare)
     # ------------------------------------------------------------------
@@ -99,8 +95,6 @@ class GeneradorAleatorio:
         self._xn_mid = int(cuadrado[inicio: inicio + k])
 
         u = self._xn_mid / (10 ** k)
-        if self._track:
-            self._historial.append(u)
         return u
 
     # ------------------------------------------------------------------
@@ -143,8 +137,6 @@ class GeneradorAleatorio:
         """
         self._xn_lcg = (a * self._xn_lcg + c) % m
         u = self._xn_lcg / m
-        if self._track:
-            self._historial.append(u)
         return u
 
     # ------------------------------------------------------------------
@@ -173,13 +165,7 @@ class GeneradorAleatorio:
         """
         u1 = self.congruencial()
         u2 = self.midsquare()
-        u = (u1 + u2) % 1.0
-        if self._track:
-            # Evitar doble registro (congruencial y midsquare ya registraron)
-            self._historial.pop()
-            self._historial.pop()
-            self._historial.append(u)
-        return u
+        return (u1 + u2) % 1.0
 
     # ------------------------------------------------------------------
     # Funciones de utilidad (interfaz principal del juego)
@@ -222,8 +208,6 @@ class GeneradorAleatorio:
         Retorna True con la probabilidad dada.
 
         Uso en el juego:
-            gen.booleano(0.05)   → aparece item legendario (5%)
-            gen.booleano(0.20)   → aparece vida extra (20%)
             gen.booleano(0.02)   → celda tiene Super Pastilla (2%)
         """
         return self._siguiente() < probabilidad
@@ -259,39 +243,6 @@ class GeneradorAleatorio:
         """
         self.__init__(self.semilla, self.metodo)
 
-    # ------------------------------------------------------------------
-    # Herramientas de análisis estadístico (para la documentación)
-    # ------------------------------------------------------------------
-    def activar_historial(self) -> None:
-        """Activa el registro de todos los valores generados."""
-        self._track = True
-        self._historial = []
-
-    def desactivar_historial(self) -> None:
-        self._track = False
-
-    def estadisticas(self) -> dict:
-        """
-        Calcula estadísticas básicas del historial.
-
-        Retorna dict con: n, media, varianza, min, max.
-        Para una distribución U(0,1) ideal: media ≈ 0.5, varianza ≈ 1/12 ≈ 0.0833
-        """
-        if not self._historial:
-            return {}
-        n = len(self._historial)
-        media = sum(self._historial) / n
-        varianza = sum((x - media) ** 2 for x in self._historial) / n
-        return {
-            'n':        n,
-            'media':    round(media, 6),
-            'varianza': round(varianza, 6),
-            'min':      round(min(self._historial), 6),
-            'max':      round(max(self._historial), 6),
-            'media_esperada':    0.5,
-            'varianza_esperada': round(1/12, 6),
-        }
-
     def __repr__(self) -> str:
         return (
             f"GeneradorAleatorio("
@@ -300,62 +251,3 @@ class GeneradorAleatorio:
             f"xn_lcg={self._xn_lcg}, "
             f"xn_mid={self._xn_mid})"
         )
-
-
-# ---------------------------------------------------------------------------
-# Script de prueba rápida (ejecutar directamente: python aleatorio.py)
-# ---------------------------------------------------------------------------
-if __name__ == '__main__':
-    print("=" * 60)
-    print("PRUEBA DE LA LIBRERÍA PRNG — Pac-Man Roguelike")
-    print("=" * 60)
-
-    # --- Midsquare ---
-    print("\n[1] Midsquare (semilla=3708, k=4)")
-    gen_mid = GeneradorAleatorio(semilla=3708, metodo='mid')
-    gen_mid.activar_historial()
-    for i in range(8):
-        u = gen_mid.midsquare()
-        print(f"  u{i+1} = {u:.4f}  |  X = {gen_mid._xn_mid}")
-    print(f"  Estadísticas: {gen_mid.estadisticas()}")
-
-    # --- LCG ---
-    print("\n[2] Congruencial Lineal (semilla=12345)")
-    gen_lcg = GeneradorAleatorio(semilla=12345, metodo='lcg')
-    gen_lcg.activar_historial()
-    for i in range(10):
-        u = gen_lcg.congruencial()
-        print(f"  u{i+1} = {u:.6f}")
-    print(f"  Estadísticas: {gen_lcg.estadisticas()}")
-
-    # --- Combinado ---
-    print("\n[3] Combinado (semilla=42)")
-    gen_comb = GeneradorAleatorio(semilla=42, metodo='comb')
-    gen_comb.activar_historial()
-    for i in range(10):
-        u = gen_comb.combinado()
-        print(f"  u{i+1} = {u:.6f}")
-    print(f"  Estadísticas: {gen_comb.estadisticas()}")
-
-    # --- Funciones de utilidad ---
-    print("\n[4] Funciones de utilidad (semilla=99, metodo='comb')")
-    gen = GeneradorAleatorio(semilla=99, metodo='comb')
-    print(f"  entero(0, 3)       = {gen.entero(0, 3)}          (dirección fantasma)")
-    print(f"  decimal(0.5, 2.0)  = {gen.decimal(0.5, 2.0):.4f}    (velocidad)")
-    print(f"  booleano(0.05)     = {gen.booleano(0.05)}       (item legendario?)")
-    print(f"  booleano(0.20)     = {gen.booleano(0.20)}       (vida extra?)")
-    power_ups = ['botas_hermes', 'radar_fantasmal', 'aliento_fuego']
-    print(f"  elegir(power_ups)  = {gen.elegir(power_ups)}")
-    mapa = [0, 1, 2, 3, 4, 5]
-    print(f"  mezclar({mapa}) = {gen.mezclar(mapa)}")
-
-    # --- Reproducibilidad (clave para Seeds en Roguelike) ---
-    print("\n[5] Reproducibilidad — misma semilla = misma secuencia")
-    for semilla in [42, 42, 777]:
-        g = GeneradorAleatorio(semilla=semilla, metodo='lcg')
-        seq = [round(g.congruencial(), 4) for _ in range(5)]
-        print(f"  Semilla {semilla}: {seq}")
-
-    print("\n" + "=" * 60)
-    print("Prueba completada. Librería lista para integrar con Pygame.")
-    print("=" * 60)
